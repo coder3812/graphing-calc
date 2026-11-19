@@ -18,35 +18,45 @@ const hudMsg = document.getElementById("hud-msg");
 let isGameMode = false;
 
 // Calculator State
-let scale = 40; // pixels per math unit
+let scale = 40;
 
-// Resize Canvas Properly
 function resizeCanvas() {
-  canvas.width = canvas.parentElement.clientWidth;
-  canvas.height = canvas.parentElement.clientHeight;
+  const container = canvas.parentElement;
+  canvas.width = container.clientWidth || window.innerWidth - (isGameMode ? 0 : 290);
+  canvas.height = container.clientHeight || window.innerHeight - 52;
   if (!isGameMode) drawCalculator();
 }
 window.addEventListener("resize", resizeCanvas);
+window.addEventListener("load", resizeCanvas);
 
 // ==========================================
-// 1. GRAPHING CALCULATOR LOGIC
+// 1. GRAPHING CALCULATOR LOGIC (FIXED)
 // ==========================================
-function parseMathExpression(expr, xVal) {
+function compileMathExpression(expr) {
+  if (!expr || !expr.trim()) return null;
   try {
-    let cleaned = expr
-      .toLowerCase()
+    // Strip "y =" or "f(x) =" if typed
+    let cleaned = expr.toLowerCase().replace(/^[a-z]\s*(\(x\))?\s*=/, "");
+
+    cleaned = cleaned
+      .replace(/\s+/g, "")
+      .replace(/(\d)([a-z\(])/g, "$1*$2")
+      .replace(/(\))(\d|[a-z\(])/g, "$1*$2")
       .replace(/\^/g, "**")
       .replace(/\bsin\b/g, "Math.sin")
       .replace(/\bcos\b/g, "Math.cos")
       .replace(/\btan\b/g, "Math.tan")
       .replace(/\bsqrt\b/g, "Math.sqrt")
       .replace(/\babs\b/g, "Math.abs")
+      .replace(/\blog\b/g, "Math.log10")
+      .replace(/\bln\b/g, "Math.log")
       .replace(/\bpi\b/g, "Math.PI")
-      .replace(/\be\b/g, "Math.E");
+      .replace(/(?<![a-zA-Z.])e(?![a-zA-Z])/g, "Math.E");
 
-    const fn = new Function("x", `return ${cleaned};`);
-    const result = fn(xVal);
-    return isFinite(result) ? result : null;
+    const fn = new Function("x", `return (${cleaned});`);
+    // Test once with x = 1 to verify valid syntax
+    fn(1);
+    return fn;
   } catch {
     return null;
   }
@@ -55,6 +65,8 @@ function parseMathExpression(expr, xVal) {
 function drawCalculator() {
   const w = canvas.width;
   const h = canvas.height;
+  if (w === 0 || h === 0) return;
+
   const cx = w / 2;
   const cy = h / 2;
 
@@ -89,28 +101,52 @@ function drawCalculator() {
   ctx.lineTo(cx, h);
   ctx.stroke();
 
+  // Axis Numbers
+  ctx.fillStyle = "#64748b";
+  ctx.font = "11px sans-serif";
+  for (let x = cx + scale; x < w; x += scale) {
+    ctx.fillText(Math.round((x - cx) / scale), x - 4, cy + 14);
+  }
+  for (let x = cx - scale; x > 0; x -= scale) {
+    ctx.fillText(Math.round((x - cx) / scale), x - 6, cy + 14);
+  }
+  for (let y = cy - scale; y > 0; y -= scale) {
+    ctx.fillText(Math.round((cy - y) / scale), cx + 6, y + 4);
+  }
+  for (let y = cy + scale; y < h; y += scale) {
+    ctx.fillText(Math.round((cy - y) / scale), cx + 6, y + 4);
+  }
+
   // Plot Functions
   plotFunction(eq1Input.value, "#2563eb");
   plotFunction(eq2Input.value, "#dc2626");
 }
 
 function plotFunction(expr, color) {
-  if (!expr.trim()) return;
+  const fn = compileMathExpression(expr);
+  if (!fn) return;
+
   const w = canvas.width;
   const h = canvas.height;
   const cx = w / 2;
   const cy = h / 2;
 
   ctx.strokeStyle = color;
-  ctx.lineWidth = 2.5;
+  ctx.lineWidth = 3;
   ctx.beginPath();
 
   let drawing = false;
-  for (let px = 0; px < w; px += 2) {
+  for (let px = 0; px <= w; px += 1) {
     const mathX = (px - cx) / scale;
-    const mathY = parseMathExpression(expr, mathX);
+    let mathY = null;
+    try {
+      const val = fn(mathX);
+      if (typeof val === "number" && isFinite(val)) mathY = val;
+    } catch {
+      mathY = null;
+    }
 
-    if (mathY !== null && Math.abs(mathY) < 1000) {
+    if (mathY !== null && Math.abs(mathY) < 2000) {
       const py = cy - mathY * scale;
       if (!drawing) {
         ctx.moveTo(px, py);
@@ -143,24 +179,26 @@ document.getElementById("reset-view").addEventListener("click", () => {
 });
 
 // ==========================================
-// 2. SECRET TOGGLE (CTRL + SHIFT + G)
+// 2. SECRET TOGGLE (CONTROL + SHIFT + G or OPTION + SHIFT + G)
 // ==========================================
-window.addEventListener("keydown", (e) => {
-  // Check Ctrl + Shift + G
-  if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "g") {
+document.addEventListener("keydown", (e) => {
+  const isControlG = e.ctrlKey && e.shiftKey && e.code === "KeyG";
+  const isOptionG = e.altKey && e.shiftKey && e.code === "KeyG";
+
+  if (isControlG || isOptionG) {
     e.preventDefault();
     toggleMode();
   }
-  // Panic key: Escape returns immediately to calculator
   if (e.key === "Escape" && isGameMode) {
     toggleMode();
   }
-});
+}, true);
 
 function toggleMode() {
   isGameMode = !isGameMode;
 
   if (isGameMode) {
+    if (document.activeElement) document.activeElement.blur();
     calcHeader.classList.add("hidden");
     calcSidebar.classList.add("hidden");
     gameHud.classList.remove("hidden");
@@ -188,9 +226,9 @@ const game = {
   initialized: false,
   score: 0,
   down: 1,
-  lineOfScrimmage: 20, // Yards (0 to 100)
+  lineOfScrimmage: 20,
   firstDownYard: 30,
-  phase: "PASSING", // PASSING, IN_AIR, RUNNING, PLAY_OVER
+  phase: "PASSING",
   isDragging: false,
   dragStart: { x: 0, y: 0 },
   dragCurrent: { x: 0, y: 0 },
@@ -202,9 +240,8 @@ const game = {
   playTimer: 0
 };
 
-// Pixels per yard dynamically scaled to screen
 function pxPerYard() {
-  return canvas.width / 65; // Show ~65 yards horizontally at once
+  return canvas.width / 65;
 }
 
 function initGame() {
@@ -225,20 +262,17 @@ function setupPlay() {
   const ppy = pxPerYard();
   const h = canvas.height;
 
-  // QB lines up 4 yards behind LOS
   game.qb = {
     x: (game.lineOfScrimmage - 4) * ppy,
     y: h * 0.5
   };
 
-  // Spawn 3 Receivers
   game.receivers = [
-    { x: game.lineOfScrimmage * ppy, y: h * 0.2, speed: 2.6, route: "GO", hasBall: false },
-    { x: game.lineOfScrimmage * ppy, y: h * 0.5, speed: 2.5, route: "SLANT", hasBall: false },
-    { x: game.lineOfScrimmage * ppy, y: h * 0.8, speed: 2.7, route: "OUT", hasBall: false }
+    { x: game.lineOfScrimmage * ppy, y: h * 0.2, speed: 2.6, route: "GO" },
+    { x: game.lineOfScrimmage * ppy, y: h * 0.5, speed: 2.5, route: "SLANT" },
+    { x: game.lineOfScrimmage * ppy, y: h * 0.8, speed: 2.7, route: "OUT" }
   ];
 
-  // Spawn 5 Defenders
   game.defenders = [
     { x: (game.lineOfScrimmage + 6) * ppy, y: h * 0.2, speed: 2.15 },
     { x: (game.lineOfScrimmage + 7) * ppy, y: h * 0.5, speed: 2.1 },
@@ -265,7 +299,6 @@ function updateHUD(msg) {
   if (msg) hudMsg.textContent = msg;
 }
 
-// Mouse Aiming Controls
 canvas.addEventListener("mousedown", (e) => {
   if (!isGameMode || game.phase !== "PASSING") return;
   const rect = canvas.getBoundingClientRect();
@@ -284,7 +317,6 @@ window.addEventListener("mouseup", () => {
   if (!isGameMode || !game.isDragging) return;
   game.isDragging = false;
 
-  // Calculate slingshot pull vector
   const dx = game.dragStart.x - game.dragCurrent.x;
   const dy = game.dragStart.y - game.dragCurrent.y;
   const power = Math.hypot(dx, dy);
@@ -308,7 +340,6 @@ window.addEventListener("mouseup", () => {
   }
 });
 
-// Game Physics & Update Loop
 function updateGame() {
   const ppy = pxPerYard();
   const h = canvas.height;
@@ -320,52 +351,44 @@ function updateGame() {
     return;
   }
 
-  // 1. Move Receivers
   game.receivers.forEach((rec) => {
     if (rec === game.carrier) return;
     rec.x += rec.speed;
     if (rec.route === "SLANT" && rec.x > (game.lineOfScrimmage + 5) * ppy) {
       rec.y += 1.1;
-    } else if (rec.route === "OUT" && rec.x > (game.lineOfScrimmage + 8) * ppy) {
-      rec.y += 1.4;
-    }
-    rec.y = Math.max(30, Math.min(h - 30, rec.y));
-  });
-
-  // 2. Ball Flight & Catching
-  if (game.phase === "IN_AIR" && game.ball.active) {
-    game.ball.x += game.ball.vx;
-    game.ball.y += game.ball.vy;
-    game.ball.z += game.ball.vz;
-    game.ball.vz -= 0.16; // Gravity
-
-    // Check Catch
-    if (game.ball.z <= 18) {
-      for (let rec of game.receivers) {
-        if (Math.hypot(rec.x - game.ball.x, rec.y - game.ball.y) < 24) {
-          game.carrier = rec;
-          game.ball.active = false;
-          game.phase = "RUNNING";
-          updateHUD("CAUGHT! USE UP/DOWN OR W/S TO JUKE!");
-          break;
-        }
-      }
-    }
-
-    // Incomplete Pass (Hits Ground)
-    if (game.ball.z <= 0) {
-      game.ball.active = false;
-      endPlay(game.lineOfScrimmage, "INCOMPLETE PASS!");
-      return;
-    }
+      
+} else if (rec.route === "OUT" && rec.x > (game.lineOfScrimmage + 8) * ppy) {
+rec.y += 1.4;
 }
-// 3. Ball Carrier Running (Player Controls Up/Down)
+rec.y = Math.max(30, Math.min(h - 30, rec.y));
+});
+if (game.phase === "IN_AIR" && game.ball.active) {
+game.ball.x += game.ball.vx;
+game.ball.y += game.ball.vy;
+game.ball.z += game.ball.vz;
+game.ball.vz -= 0.16;
+if (game.ball.z <= 18) {
+for (let rec of game.receivers) {
+if (Math.hypot(rec.x - game.ball.x, rec.y - game.ball.y) < 24) {
+game.carrier = rec;
+game.ball.active = false;
+game.phase = "RUNNING";
+updateHUD("CAUGHT! USE UP/DOWN OR W/S TO JUKE!");
+break;
+}
+}
+}
+if (game.ball.z <= 0) {
+game.ball.active = false;
+endPlay(game.lineOfScrimmage, "INCOMPLETE PASS!");
+return;
+}
+}
 if (game.phase === "RUNNING" && game.carrier) {
-game.carrier.x += 3.1; // Auto sprint toward endzone
+game.carrier.x += 3.1;
 if (keys["w"] || keys["arrowup"]) game.carrier.y -= 3.2;
 if (keys["s"] || keys["arrowdown"]) game.carrier.y += 3.2;
 game.carrier.y = Math.max(25, Math.min(h - 25, game.carrier.y));
-// Check Touchdown
 if (game.carrier.x >= endZoneX) {
 game.score += 7;
 game.lineOfScrimmage = 20;
@@ -377,30 +400,26 @@ updateHUD("TOUCHDOWN! +7 POINTS!");
 return;
 }
 }
-// 4. Defenders AI
 const target = game.carrier || game.qb;
 game.defenders.forEach((def, idx) => {
 if (game.phase === "RUNNING") {
-// Chase ball carrier
 const angle = Math.atan2(target.y - def.y, target.x - def.x);
 def.x += Math.cos(angle) * def.speed;
 def.y += Math.sin(angle) * def.speed;
-// Tackle check
 if (Math.hypot(def.x - target.x, def.y - target.y) < 18) {
 const newYard = Math.max(1, Math.round(target.x / ppy));
 endPlay(newYard, "TACKLED!");
 }
 } else {
-// Rush QB slowly or cover zones
 if (idx < 2) {
 const angle = Math.atan2(game.qb.y - def.y, game.qb.x - def.x);
-def.x += Math.cos(angle) * 0.95; // Pass rush
+def.x += Math.cos(angle) * 0.95;
 def.y += Math.sin(angle) * 0.95;
 if (Math.hypot(def.x - game.qb.x, def.y - game.qb.y) < 18) {
 endPlay(Math.max(1, game.lineOfScrimmage - 5), "SACKED!");
 }
 } else {
-def.x += 0.9; // Drop into coverage
+def.x += 0.9;
 }
 }
 });
@@ -432,23 +451,19 @@ function drawGame() {
 const w = canvas.width;
 const h = canvas.height;
 const ppy = pxPerYard();
-// Camera scrolls smoothly with QB or Ball Carrier
 const focusX = game.carrier ? game.carrier.x : game.qb.x;
 const camX = Math.max(0, focusX - w * 0.25);
 ctx.save();
 ctx.translate(-camX, 0);
-// Turf Stripes (Alternating Retro Greens)
 for (let yard = 0; yard < 110; yard += 5) {
 ctx.fillStyle = (yard / 5) % 2 === 0 ? "#2e7d32" : "#388e3c";
 ctx.fillRect(yard * ppy, 0, 5 * ppy, h);
 }
-// Opponent End Zone (100 to 110 yards)
 ctx.fillStyle = "#b91c1c";
 ctx.fillRect(100 * ppy, 0, 15 * ppy, h);
 ctx.fillStyle = "rgba(255,255,255,0.25)";
 ctx.font = "bold 36px Courier New";
 ctx.fillText("TOUCHDOWN", 102 * ppy, h / 2);
-// Yard Lines & Numbers
 ctx.strokeStyle = "rgba(255, 255, 255, 0.75)";
 ctx.lineWidth = 2;
 ctx.font = "bold 16px Courier New";
@@ -465,14 +480,12 @@ ctx.fillText(label, x - 10, 30);
 ctx.fillText(label, x - 10, h - 18);
 }
 }
-// Line of Scrimmage (Blue Line)
 ctx.strokeStyle = "#38bdf8";
 ctx.lineWidth = 3;
 ctx.beginPath();
 ctx.moveTo(game.lineOfScrimmage * ppy, 0);
 ctx.lineTo(game.lineOfScrimmage * ppy, h);
 ctx.stroke();
-// First Down Line (Yellow Line)
 if (game.firstDownYard < 100) {
 ctx.strokeStyle = "#facc15";
 ctx.lineWidth = 3;
@@ -481,7 +494,6 @@ ctx.moveTo(game.firstDownYard * ppy, 0);
 ctx.lineTo(game.firstDownYard * ppy, h);
 ctx.stroke();
 }
-// Aiming Dots (Slingshot Preview)
 if (game.isDragging && game.phase === "PASSING") {
 const dx = game.dragStart.x - game.dragCurrent.x;
 const dy = game.dragStart.y - game.dragCurrent.y;
@@ -497,18 +509,14 @@ ctx.arc(dotX, dotY, 4 - i * 0.3, 0, Math.PI * 2);
 ctx.fill();
 }
 }
-// Draw Players (Retro Blocky Sprites)
-drawPlayer(game.qb.x, game.qb.y, "#2563eb", "#ffffff"); // QB
-game.receivers.forEach((r) => drawPlayer(r.x, r.y, "#2563eb", "#facc15")); // WRs
-game.defenders.forEach((d) => drawPlayer(d.x, d.y, "#dc2626", "#1e293b")); // Defenders
-// Draw Football
+drawPlayer(game.qb.x, game.qb.y, "#2563eb", "#ffffff");
+game.receivers.forEach((r) => drawPlayer(r.x, r.y, "#2563eb", "#facc15"));
+game.defenders.forEach((d) => drawPlayer(d.x, d.y, "#dc2626", "#1e293b"));
 if (game.ball.active) {
-// Shadow
 ctx.fillStyle = "rgba(0,0,0,0.4)";
 ctx.beginPath();
 ctx.ellipse(game.ball.x, game.ball.y + 8, 7, 4, 0, 0, Math.PI * 2);
 ctx.fill();
-// Ball elevated by Z height
 ctx.fillStyle = "#78350f";
 ctx.strokeStyle = "#ffffff";
 ctx.lineWidth = 1.5;
@@ -520,13 +528,10 @@ ctx.stroke();
 ctx.restore();
 }
 function drawPlayer(x, y, jerseyColor, helmetColor) {
-// Shadow
 ctx.fillStyle = "rgba(0,0,0,0.35)";
 ctx.fillRect(x - 9, y + 8, 18, 5);
-// Jersey Body
 ctx.fillStyle = jerseyColor;
 ctx.fillRect(x - 9, y - 6, 18, 15);
-// Helmet
 ctx.fillStyle = helmetColor;
 ctx.fillRect(x - 6, y - 13, 12, 8);
 }
