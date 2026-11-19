@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GraphCalc Pro - Function Plotter</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Top Header -->
+  <header id="top-bar">
+    <div id="calc-header" class="header-content">
+      <div class="logo">GraphCalc <span>Pro</span></div>
+      <div class="calc-status">Mode: Radian | Grid: 1.0</div>
+    </div>
+
+    <!-- Hidden Game HUD (Appears only in Game Mode) -->
+    <div id="game-hud" class="header-content hidden">
+      <div class="hud-box">SCORE: <span id="hud-score">0</span></div>
+      <div class="hud-box">DOWN: <span id="hud-down">1st & 10</span></div>
+      <div class="hud-box">BALL ON: <span id="hud-yard">OWN 20</span></div>
+      <div class="hud-msg" id="hud-msg">DRAG BACKWARD TO AIM & THROW</div>
+    </div>
+  </header>
+
+  <!-- Main Workspace -->
+  <main id="workspace">
+    <!-- Left Sidebar (Calculator Controls) -->
+    <aside id="calc-sidebar">
+      <div class="sidebar-title">Expressions</div>
+      
+      <div class="equation-row">
+        <span class="color-dot blue"></span>
+        <label>f(x) =</label>
+        <input type="text" id="eq1" value="sin(x) * 3" placeholder="e.g. x^2 - 4" />
+      </div>
+
+      <div class="equation-row">
+        <span class="color-dot red"></span>
+        <label>g(x) =</label>
+        <input type="text" id="eq2" value="0.2 * x^2 - 3" placeholder="e.g. 2*x + 1" />
+      </div>
+
+      <button id="plot-btn">Plot Functions</button>
+
+      <div class="zoom-controls">
+        <button id="zoom-in">Zoom In (+)</button>
+        <button id="zoom-out">Zoom Out (-)</button>
+        <button id="reset-view">Reset</button>
+      </div>
+
+      <div class="help-box">
+        <strong>Supported Syntax:</strong><br />
+        <code>+ - * / ^</code>, <code>sin(x)</code>, <code>cos(x)</code>, <code>tan(x)</code>, <code>sqrt(x)</code>, <code>abs(x)</code>, <code>pi</code>, <code>e</code>
+      </div>
+    </aside>
+
+    <!-- Shared Canvas for Both Calculator & Game -->
+    <section id="canvas-container">
+      <canvas id="mainCanvas"></canvas>
+    </section>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>
